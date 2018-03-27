@@ -1,4 +1,4 @@
-// Copyright 2014 The Go Authors. All rights reserved.
+// Copyright 2014 The oauth2 Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -21,26 +21,10 @@ import (
 
 // NoContext is the default context you should supply if not using
 // your own context.Context (see https://golang.org/x/net/context).
-//
-// Deprecated: Use context.Background() or context.TODO() instead.
 var NoContext = context.TODO()
-
-// RegisterBrokenAuthHeaderProvider registers an OAuth2 server
-// identified by the tokenURL prefix as an OAuth2 implementation
-// which doesn't support the HTTP Basic authentication
-// scheme to authenticate with the authorization server.
-// Once a server is registered, credentials (client_id and client_secret)
-// will be passed as query parameters rather than being present
-// in the Authorization header.
-// See https://code.google.com/p/goauth2/issues/detail?id=31 for background.
-func RegisterBrokenAuthHeaderProvider(tokenURL string) {
-	internal.RegisterBrokenAuthHeaderProvider(tokenURL)
-}
 
 // Config describes a typical 3-legged OAuth2 flow, with both the
 // client application information and the server's endpoint URLs.
-// For the client credentials 2-legged OAuth2 flow, see the clientcredentials
-// package (https://golang.org/x/oauth2/clientcredentials).
 type Config struct {
 	// ClientID is the application's ID.
 	ClientID string
@@ -165,34 +149,6 @@ func (c *Config) PasswordCredentialsToken(ctx context.Context, username, passwor
 	})
 }
 
-// PasswordCredentialsTokenEx converts a resource owner username and password
-// pair into a token.
-//
-// Per the RFC, this grant type should only be used "when there is a high
-// degree of trust between the resource owner and the client (e.g., the client
-// is part of the device operating system or a highly privileged application),
-// and when other authorization grant types are not available."
-// See https://tools.ietf.org/html/rfc6749#section-4.3 for more info.
-//
-// The HTTP client to use is derived from the context.
-// If nil, http.DefaultClient is used.
-func (c *Config) PasswordCredentialsTokenEx(ctx context.Context, username, password string, parameters url.Values) (*Token, error) {
-	values := url.Values{
-		"grant_type": {"password"},
-		"username":   {username},
-		"password":   {password},
-		"scope":      internal.CondVal(strings.Join(c.Scopes, " ")),
-	}
-
-	if parameters != nil {
-		for k, v := range parameters {
-			values[k] = v
-		}
-	}
-
-	return retrieveToken(ctx, c, values)
-}
-
 // Exchange converts an authorization code into a token.
 //
 // It is used after a resource provider redirects the user back
@@ -208,6 +164,7 @@ func (c *Config) Exchange(ctx context.Context, code string) (*Token, error) {
 		"grant_type":   {"authorization_code"},
 		"code":         {code},
 		"redirect_uri": internal.CondVal(c.RedirectURL),
+		"scope":        internal.CondVal(strings.Join(c.Scopes, " ")),
 	})
 }
 
@@ -319,10 +276,6 @@ var HTTPClient internal.ContextKey
 // NewClient creates an *http.Client from a Context and TokenSource.
 // The returned client is not valid beyond the lifetime of the context.
 //
-// Note that if a custom *http.Client is provided via the Context it
-// is used only for token acquisition and is not used to configure the
-// *http.Client returned from NewClient.
-//
 // As a special case, if src is nil, a non-OAuth2 client is returned
 // using the provided context. This exists to support related OAuth2
 // packages.
@@ -330,7 +283,7 @@ func NewClient(ctx context.Context, src TokenSource) *http.Client {
 	if src == nil {
 		c, err := internal.ContextClient(ctx)
 		if err != nil {
-			return &http.Client{Transport: internal.ErrorTransport{Err: err}}
+			return &http.Client{Transport: internal.ErrorTransport{err}}
 		}
 		return c
 	}
